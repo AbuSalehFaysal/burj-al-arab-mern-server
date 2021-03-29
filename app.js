@@ -1,16 +1,34 @@
 const express = require('express')
 const bodyParser = require("body-parser")
 const cors = require("cors")
+const admin = require('firebase-admin');
 const app = express()
+
+const MongoClient = require('mongodb').MongoClient;
+require('dotenv').config();
+// console.log(process.env.DB_PASS);
+
+const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.hrxvr.mongodb.net/burjAlArab?retryWrites=true&w=majority`;
 const port = 5000
 
 app.use(cors())
 app.use(bodyParser.json())
 
-const password = '8uftxmhexuEIGnTJ';
 
-const MongoClient = require('mongodb').MongoClient;
-const uri = "mongodb+srv://AbuSalehFaysal:8uftxmhexuEIGnTJ@cluster0.hrxvr.mongodb.net/burjAlArab?retryWrites=true&w=majority";
+// var admin = require("firebase-admin");
+
+var serviceAccount = require("./configs/burj-al-arab-firebase-mern-firebase-adminsdk-qcrvl-a58a1fae67.json");
+
+admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+});
+
+
+// const password = '8uftxmhexuEIGnTJ';
+
+
+
+
 const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true });
 client.connect(err => {
     const bookings = client.db("burjAlArab").collection("bookings");
@@ -21,18 +39,42 @@ client.connect(err => {
         const newBooking = req.body;
         // console.log(newBooking);
         bookings.insertOne(newBooking)
-        .then(result => {
-            // console.log(result);
-            res.send(result.insertedCount > 0)
-        })
+            .then(result => {
+                // console.log(result);
+                res.send(result.insertedCount > 0)
+            })
     })
 
     app.get("/bookings", (req, res) => {
-        console.log(req.headers.authorization);
-        bookings.find({email: req.query.email})
-        .toArray((err, documents) => {
-            res.send(documents);
-        })
+        // console.log(req.headers.authorization);
+        const bearer = req.headers.authorization;
+        if (bearer && bearer.startsWith('Bearer ')) {
+            const idToken = bearer.split(' ')[1];
+            console.log({ idToken });
+            admin
+                .auth()
+                .verifyIdToken(idToken)
+                .then((decodedToken) => {
+                    const tokenEmail = decodedToken.email;
+                    const queryEmail = req.query.email;
+                    // console.log(tokenEmail, queryEmail);
+                    if (tokenEmail == queryEmail) {
+                        bookings.find({ email: queryEmail })
+                            .toArray((err, documents) => {
+                                res.status(200).send(documents);
+                            })
+                    } else {
+                        res.status(401).send('Unauthorized Access');
+                    }
+                })
+                .catch((error) => {
+                    // Handle error
+                    res.status(401).send('Unauthorized Access');
+                });
+        }
+        else {
+            res.status(401).send('Unauthorized Access');
+        }
     })
 
 });
